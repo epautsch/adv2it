@@ -12,6 +12,9 @@ Run the demo using the following script:
 python test.py --img_path images/fold_0.npz --src_model deit_base_patch16_224 --tar_model lrp_b --attack_type pgd --eps 8 --index “all” --batch_size 1
 ```
 
+The script uses **DeiT-B** model as a source model and **ViT-B** as a target model. The algorithms attack [Vision Interpreter](https://github.com/hila-chefer/Transformer-Explainability) model. The models will be downloaded automatically once the script is run. 
+
+
 ## Input
 Input should be in the _npz_ format. In the format there is a key called _img_x_ that stores the image in the numpy format. For the test, there are example images provided in the **images** folder.
 
