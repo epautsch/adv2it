@@ -31,4 +31,7 @@ python visualize.py --img_path output/output_fold_0.npz
 ## Visualization Output
 Output is in _png_ format. The algorithm saves the output in the **visualization** folder.
 
+![alt text](visualization/example_output.png)
+
+
 **Note**: I recommend to play with hyperparameters to get the best results.
