@@ -67,25 +67,31 @@ stack_kern, padding_size = project_kern(3)
 def show_cam_on_image(img, mask):
     heatmap = cv2.applyColorMap(np.uint8(255 * mask), cv2.COLORMAP_JET)
     heatmap = np.float32(heatmap) / 255
-    cam = heatmap #+ np.float32(img)
+    cam = heatmap  # + np.float32(img)
     cam = cam / np.max(cam)
     return cam
 
+
 def generate_visualization_(original_image, device, attribution_generator, class_index=None):
-    transformer_attribution = attribution_generator.generate_LRP(original_image.unsqueeze(0).to(device), device, method="transformer_attribution", index=class_index).detach()
+    transformer_attribution = attribution_generator.generate_LRP(original_image.unsqueeze(0).to(device), device,
+                                                                 method="transformer_attribution",
+                                                                 index=class_index).detach()
     transformer_attribution = transformer_attribution.reshape(1, 1, 14, 14)
     transformer_attribution = torch.nn.functional.interpolate(transformer_attribution, scale_factor=16, mode='bilinear')
     transformer_attribution = transformer_attribution.reshape(224, 224).to(device).data.cpu().numpy()
-    transformer_attribution = (transformer_attribution - transformer_attribution.min()) / (transformer_attribution.max() - transformer_attribution.min())
+    transformer_attribution = (transformer_attribution - transformer_attribution.min()) / (
+                transformer_attribution.max() - transformer_attribution.min())
     image_transformer_attribution = original_image.permute(1, 2, 0).data.cpu().numpy()
-    image_transformer_attribution = (image_transformer_attribution - image_transformer_attribution.min()) / (image_transformer_attribution.max() - image_transformer_attribution.min())
+    image_transformer_attribution = (image_transformer_attribution - image_transformer_attribution.min()) / (
+                image_transformer_attribution.max() - image_transformer_attribution.min())
     vis = show_cam_on_image(image_transformer_attribution, transformer_attribution)
-    vis =  np.uint8(255 * vis)
+    vis = np.uint8(255 * vis)
     vis = cv2.cvtColor(np.array(vis), cv2.COLOR_RGB2BGR)
     return vis
 
-def local_adv(device, model, att_gen, criterion, img, label, eps, ben_cam, attack_type, iters, mean, std, index, apply_ti=False, amp=10):
 
+def local_adv(device, model, att_gen, criterion, img, label, eps, ben_cam, attack_type, iters, mean, std, index,
+              apply_ti=False, amp=10, src_name=None):
     adv = img.detach()
 
     if attack_type == 'rfgsm':
@@ -114,29 +120,45 @@ def local_adv(device, model, att_gen, criterion, img, label, eps, ben_cam, attac
         # images_max = clip_by_tensor(img + eps, 0.0, 1.0)
 
     for j in range(10):
-      out_adv = model(normalize(adv.clone(), mean=mean, std=std))
-      loss = 0
-      # if isinstance(out_adv, list) and index == 'all':
+        out_adv = model(normalize(adv.clone(), mean=mean, std=std))
+        loss = 0
+        # if isinstance(out_adv, list) and index == 'all':
         # print('Eldor')
-      loss = 0
-      for idx in range(len(out_adv)):
-        loss += criterion(out_adv[idx], label)
+        loss = 0
+        for idx in range(len(out_adv)):
+            if src_name == 'deit_base_patch16_224':
+                loss += criterion(out_adv[idx], label)
+            elif src_name == 'deit3_base_patch16_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'deit3_large_patch16_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'deit3_huge_patch14_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_huge_patch14_224.orig_in21k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_giant_patch14_clip_224.laion2b':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_gigantic_patch14_clip_224.laion2b':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'swinv2_cr_small_ns_224.sw_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'swinv2_cr_tiny_ns_224.sw_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
         # loss += F.nll_loss(out_adv[idx], label, reduction='sum')
-      # elif isinstance(out_adv, list) and index == 'last':
-      #   loss = criterion(out_adv[-1], label)
-      # else:
+        # elif isinstance(out_adv, list) and index == 'last':
+        #   loss = criterion(out_adv[-1], label)
+        # else:
         # loss = criterion(out_adv, label)
 
-      loss.backward()
+        loss.backward()
 
-      adv_noise = adv.grad
-      adv.data = adv.data + step * adv_noise.sign()
-      
-      adv.data = torch.where(adv.data > img.data + eps, img.data + eps, adv.data)
-      adv.data = torch.where(adv.data < img.data - eps, img.data - eps, adv.data)
-      adv.data.clamp_(0.0, 1.0)
-      adv.grad.data.zero_()
+        adv_noise = adv.grad
+        adv.data = adv.data + step * adv_noise.sign()
 
+        adv.data = torch.where(adv.data > img.data + eps, img.data + eps, adv.data)
+        adv.data = torch.where(adv.data < img.data - eps, img.data - eps, adv.data)
+        adv.data.clamp_(0.0, 1.0)
+        adv.grad.data.zero_()
 
     adv_noise = 0
     label_indices = np.arange(0, 1, dtype=np.int64)
@@ -169,7 +191,7 @@ def local_adv(device, model, att_gen, criterion, img, label, eps, ben_cam, attac
         loss_cam = (diff * diff).mean(1)
 
         conf_base = 0.95 + j / iterations * 0.04
-        conf = np.random.uniform(conf_base, 1, size=(1, )).astype(np.float32)
+        conf = np.random.uniform(conf_base, 1, size=(1,)).astype(np.float32)
         conf_mat = ((1 - conf) / 9.).reshape((1, 1)).repeat(1000, 1)
         conf_mat[label_indices, label] = conf
 
@@ -177,14 +199,31 @@ def local_adv(device, model, att_gen, criterion, img, label, eps, ben_cam, attac
 
         loss = 0
         # if isinstance(out_adv, list) and index == 'all':
-            # loss = 0
+        # loss = 0
         for idx in range(len(out_adv)):
-          loss += criterion(out_adv[idx], label)
-          # loss +=  (-by_one * F.log_softmax(out_adv[idx])).sum()
+            if src_name == 'deit_base_patch16_224':
+                loss += criterion(out_adv[idx], label)
+            elif src_name == 'deit3_base_patch16_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'deit3_large_patch16_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'deit3_huge_patch14_224.fb_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_huge_patch14_224.orig_in21k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_giant_patch14_clip_224.laion2b':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'vit_gigantic_patch14_clip_224.laion2b':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'swinv2_cr_small_ns_224.sw_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+            elif src_name == 'swinv2_cr_tiny_ns_224.sw_in1k':
+                loss += criterion(out_adv[idx].unsqueeze(0), label)
+        # loss +=  (-by_one * F.log_softmax(out_adv[idx])).sum()
         # elif isinstance(out_adv, list) and index == 'last':
-            # loss = criterion(out_adv[-1], label)
+        # loss = criterion(out_adv[-1], label)
         # else:
-            # loss = criterion(out_adv, label)
+        # loss = criterion(out_adv, label)
 
         loss += c_now * loss_cam.item()
 
@@ -257,7 +296,6 @@ def local_adv_target(model, att_gen, criterion, img, target, eps, ben_cam, attac
 
         adv_cam = generate_visualization_(adv_r.clone().squeeze(0), att_gen)
 
-
         adv_cam_flatten = torch.tensor(adv_cam).view(1, -1)
         adv_cam_flatten = adv_cam_flatten - adv_cam_flatten.min(1, True)[0]
         adv_cam_flatten = adv_cam_flatten / adv_cam_flatten.max(1, True)[0]
@@ -279,7 +317,7 @@ def local_adv_target(model, att_gen, criterion, img, target, eps, ben_cam, attac
         else:
             loss = criterion(out_adv, target)
 
-        loss += 50.*loss_cam.item()
+        loss += 50. * loss_cam.item()
 
         loss.backward()
 
